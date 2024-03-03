@@ -11,7 +11,10 @@ class VPConan(ConanFile):
     exports_sources = "cmake", "src", "CMakeLists.txt", "LICENSE"
 
     def requirements(self):
-        self.requires("fmt/10.2.1")
+        self.requires("vulkan-headers/1.3.268.0")
+        self.requires("vulkan-loader/1.3.268.0")
+        self.requires("glfw/3.4")
+        self.requires("glm/cci.20230113")
 
     def build_requirements(self):
         self.tool_requires("cmake/[^3.27]")

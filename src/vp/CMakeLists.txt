@@ -7,7 +7,10 @@ target_sources(vp
 
 target_link_libraries(vp
     PRIVATE
-        fmt::fmt
+        glfw
+        glm::glm
+        vulkan-headers::vulkan-headers
+        Vulkan::Loader
         project-options
 )
 

@@ -10,7 +10,11 @@ option(VP_ENABLE_COMPILER_STATIC_ANALYSIS "Enable static analysis provided by co
 option(VP_ENABLE_CPPCHECK "Enable cppcheck in build" OFF)
 option(VP_ENABLE_IWYU "Enable include-what-you-use in build" OFF)
 
-find_package(fmt REQUIRED)
+find_package(VulkanHeaders REQUIRED)
+find_package(VulkanLoader REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(glm REQUIRED)
+
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)
