@@ -1,16 +1,23 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace
 {
+    std::array<char const*, 1> const device_extensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
     struct [[nodiscard]] queue_family_indices
     {
         std::optional<uint32_t> graphics_family;
@@ -59,12 +66,146 @@ namespace
         return indices;
     }
 
+    struct [[nodiscard]] swap_chain_support_details
+    {
+        VkSurfaceCapabilitiesKHR capabilities;
+        std::vector<VkSurfaceFormatKHR> formats;
+        std::vector<VkPresentModeKHR> present_modes;
+    };
+
+    swap_chain_support_details query_swap_chain_support(VkPhysicalDevice device,
+        VkSurfaceKHR surface)
+    {
+        swap_chain_support_details details;
+
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device,
+            surface,
+            &details.capabilities);
+
+        uint32_t format_count;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device,
+            surface,
+            &format_count,
+            nullptr);
+
+        if (format_count != 0)
+        {
+            details.formats.resize(format_count);
+            vkGetPhysicalDeviceSurfaceFormatsKHR(device,
+                surface,
+                &format_count,
+                details.formats.data());
+        }
+
+        uint32_t present_count;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device,
+            surface,
+            &present_count,
+            nullptr);
+
+        if (present_count != 0)
+        {
+            details.present_modes.resize(present_count);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device,
+                surface,
+                &present_count,
+                details.present_modes.data());
+        }
+
+        return details;
+    }
+
+    VkSurfaceFormatKHR choose_swap_surface_format(
+        std::span<VkSurfaceFormatKHR const> available_formats)
+    {
+        if (auto const it{std::ranges::find_if(available_formats,
+                [](VkSurfaceFormatKHR const& f)
+                {
+                    return f.format == VK_FORMAT_B8G8R8A8_SRGB &&
+                        f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+                })};
+            it != available_formats.cend())
+        {
+            return *it;
+        }
+
+        return available_formats.front();
+    }
+
+    VkPresentModeKHR choose_swap_present_mode(
+        std::span<VkPresentModeKHR const> available_present_modes)
+    {
+        constexpr auto preffered_mode{VK_PRESENT_MODE_MAILBOX_KHR};
+        return std::ranges::find(available_present_modes, preffered_mode) !=
+                available_present_modes.cend()
+            ? preffered_mode
+            : VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    VkExtent2D choose_swap_extent(GLFWwindow* window,
+        VkSurfaceCapabilitiesKHR const& capabilities)
+    {
+        if (capabilities.currentExtent.width !=
+            std::numeric_limits<uint32_t>::max())
+        {
+            return capabilities.currentExtent;
+        }
+
+        int width;
+        int height;
+        glfwGetFramebufferSize(window, &width, &height);
+
+        VkExtent2D actual_extent = {static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height)};
+
+        actual_extent.width = std::clamp(actual_extent.width,
+            capabilities.minImageExtent.width,
+            capabilities.maxImageExtent.width);
+        actual_extent.height = std::clamp(actual_extent.height,
+            capabilities.minImageExtent.height,
+            capabilities.maxImageExtent.height);
+
+        return actual_extent;
+    }
+
+    [[nodiscard]] bool extensions_supported(VkPhysicalDevice device)
+    {
+        uint32_t count;
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> available_extensions{count};
+        vkEnumerateDeviceExtensionProperties(device,
+            nullptr,
+            &count,
+            available_extensions.data());
+
+        std::set<std::string_view> required_extensions(
+            device_extensions.cbegin(),
+            device_extensions.cend());
+        for (auto const& extension : available_extensions)
+        {
+            required_extensions.erase(extension.extensionName);
+        }
+
+        return required_extensions.empty();
+    }
+
     [[nodiscard]] bool is_device_suitable(VkPhysicalDevice device,
         VkSurfaceKHR surface)
     {
         auto const indices{find_queue_families(device, surface)};
 
-        return indices.graphics_family.has_value() && indices.present_family.has_value();
+        bool swap_chain_adequate = false;
+        if (extensions_supported(device))
+        {
+            auto const swap_chain_support{
+                query_swap_chain_support(device, surface)};
+
+            swap_chain_adequate = !swap_chain_support.formats.empty() &&
+                !swap_chain_support.present_modes.empty();
+        }
+
+        return indices.graphics_family && indices.present_family &&
+            swap_chain_adequate;
     }
 } // namespace
 
@@ -97,6 +238,7 @@ private:
         create_surface();
         physical_device_ = pick_physical_device();
         create_logical_device();
+        create_swap_chain();
     }
 
     void create_instance()
@@ -182,11 +324,11 @@ private:
 
     void create_logical_device()
     {
-        queue_family_indices indices = find_queue_families(physical_device_, surface_);
+        queue_family_indices indices =
+            find_queue_families(physical_device_, surface_);
 
         std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-        std::set<uint32_t> unique_families = {
-            indices.graphics_family.value(),
+        std::set<uint32_t> unique_families = {indices.graphics_family.value(),
             indices.present_family.value()};
         float const priority{1.0f};
         for (uint32_t family : unique_families)
@@ -208,7 +350,9 @@ private:
                 static_cast<uint32_t>(queue_create_infos.size()),
             .pQueueCreateInfos = queue_create_infos.data(),
             .enabledLayerCount = 0,
-            .enabledExtensionCount = 0,
+            .enabledExtensionCount =
+                static_cast<uint32_t>(device_extensions.size()),
+            .ppEnabledExtensionNames = device_extensions.data(),
             .pEnabledFeatures = &device_features};
 
         if (auto r = vkCreateDevice(physical_device_,
@@ -231,6 +375,75 @@ private:
             &present_queue_);
     }
 
+    void create_swap_chain()
+    {
+        swap_chain_support_details const support{
+            query_swap_chain_support(physical_device_, surface_)};
+        VkSurfaceFormatKHR const surface_format{
+            choose_swap_surface_format(support.formats)};
+        VkPresentModeKHR const present_mode{
+            choose_swap_present_mode(support.present_modes)};
+        VkExtent2D extent{
+            choose_swap_extent(window_.get(), support.capabilities)};
+
+        uint32_t image_count{support.capabilities.minImageCount + 1};
+        if (support.capabilities.maxImageCount > 0)
+        {
+            image_count =
+                std::min(support.capabilities.maxImageCount, image_count);
+        }
+
+        VkSwapchainCreateInfoKHR create_info{
+            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface = surface_,
+            .minImageCount = image_count,
+            .imageFormat = surface_format.format,
+            .imageColorSpace = surface_format.colorSpace,
+            .imageExtent = extent,
+            .imageArrayLayers = 1,
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .preTransform = support.capabilities.currentTransform,
+            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode = present_mode,
+            .clipped = VK_TRUE,
+            .oldSwapchain = VK_NULL_HANDLE};
+
+        queue_family_indices const indices{
+            find_queue_families(physical_device_, surface_)};
+        std::array queue_family_indices{indices.present_family.value(),
+            indices.present_family.value()};
+
+        if (indices.graphics_family != indices.present_family)
+        {
+            create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            create_info.queueFamilyIndexCount = 2;
+            create_info.pQueueFamilyIndices = queue_family_indices.data();
+        }
+        else
+        {
+            create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            create_info.queueFamilyIndexCount = 0;
+            create_info.pQueueFamilyIndices = nullptr;
+        }
+
+        if (vkCreateSwapchainKHR(device_,
+                &create_info,
+                nullptr,
+                &swap_chain_) != VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to create swap chain!"};
+        }
+
+        vkGetSwapchainImagesKHR(device_, swap_chain_, &image_count, nullptr);
+        swap_chain_images_.resize(image_count);
+        vkGetSwapchainImagesKHR(device_,
+            swap_chain_,
+            &image_count,
+            swap_chain_images_.data());
+        swap_chain_image_format_ = surface_format.format;
+        swap_chain_extent_ = extent;
+    }
+
     void mainLoop()
     {
         while (!glfwWindowShouldClose(window_.get()))
@@ -241,6 +454,7 @@ private:
 
     void cleanup()
     {
+        vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
         vkDestroyDevice(device_, nullptr);
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
         vkDestroyInstance(instance_, nullptr);
@@ -257,6 +471,10 @@ private:
     VkDevice device_;
     VkQueue graphics_queue_;
     VkQueue present_queue_;
+    VkSwapchainKHR swap_chain_;
+    std::vector<VkImage> swap_chain_images_;
+    VkFormat swap_chain_image_format_;
+    VkExtent2D swap_chain_extent_;
 };
 
 int main()
