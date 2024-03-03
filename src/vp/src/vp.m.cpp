@@ -236,9 +236,10 @@ private:
     {
         create_instance();
         create_surface();
-        physical_device_ = pick_physical_device();
+        pick_physical_device();
         create_logical_device();
         create_swap_chain();
+        create_image_views();
     }
 
     void create_instance()
@@ -297,7 +298,7 @@ private:
         }
     }
 
-    VkPhysicalDevice pick_physical_device()
+    void pick_physical_device()
     {
         uint32_t count;
         vkEnumeratePhysicalDevices(instance_, &count, nullptr);
@@ -319,7 +320,7 @@ private:
             throw std::runtime_error{"failed to find a suitable GPU!"};
         }
 
-        return *device_it;
+        physical_device_ = *device_it;
     }
 
     void create_logical_device()
@@ -444,6 +445,42 @@ private:
         swap_chain_extent_ = extent;
     }
 
+    void create_image_views()
+    {
+        constexpr VkComponentMapping components{
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY};
+
+        constexpr VkImageSubresourceRange subresource_range{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1};
+
+        swap_chain_image_views_.resize(swap_chain_images_.size());
+        VkImageView* current_view{swap_chain_image_views_.data()};
+
+        for (VkImage const image : swap_chain_images_)
+        {
+            VkImageViewCreateInfo create_info{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = image,
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = swap_chain_image_format_,
+                .components = components,
+                .subresourceRange = subresource_range
+            };
+
+            if (vkCreateImageView(device_, &create_info, nullptr, current_view++) != VK_SUCCESS)
+            {
+                throw std::runtime_error{"failed to create image views!"};
+            }
+        }
+    }
+
     void mainLoop()
     {
         while (!glfwWindowShouldClose(window_.get()))
@@ -454,6 +491,9 @@ private:
 
     void cleanup()
     {
+        std::ranges::for_each(swap_chain_image_views_,
+            [this](VkImageView view)
+            { vkDestroyImageView(device_, view, nullptr); });
         vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
         vkDestroyDevice(device_, nullptr);
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
@@ -475,6 +515,7 @@ private:
     std::vector<VkImage> swap_chain_images_;
     VkFormat swap_chain_image_format_;
     VkExtent2D swap_chain_extent_;
+    std::vector<VkImageView> swap_chain_image_views_;
 };
 
 int main()
