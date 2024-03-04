@@ -4,7 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <set>
@@ -12,6 +15,27 @@
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+
+namespace
+{
+    [[nodiscard]] std::vector<char> read_file(std::filesystem::path const& file)
+    {
+        std::ifstream stream{file, std::ios::ate | std::ios::binary};
+
+        if (!stream)
+        {
+            throw std::runtime_error{"failed to open file!"};
+        }
+
+        auto const file_size{static_cast<size_t>(stream.tellg())};
+
+        std::vector<char> buffer(file_size);
+        stream.seekg(0);
+        stream.read(buffer.data(), file_size);
+
+        return buffer;
+    }
+} // namespace
 
 namespace
 {
@@ -207,6 +231,24 @@ namespace
         return indices.graphics_family && indices.present_family &&
             swap_chain_adequate;
     }
+
+    [[nodiscard]] VkShaderModule create_shader_module(VkDevice device,
+        std::span<char const> code)
+    {
+        VkShaderModuleCreateInfo create_info{
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = code.size(),
+            .pCode = reinterpret_cast<uint32_t const*>(code.data())};
+
+        VkShaderModule module;
+        if (vkCreateShaderModule(device, &create_info, nullptr, &module) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to create shader module"};
+        }
+
+        return module;
+    }
 } // namespace
 
 class hello_triangle_application
@@ -240,6 +282,7 @@ private:
         create_logical_device();
         create_swap_chain();
         create_image_views();
+        create_graphics_pipeline();
     }
 
     void create_instance()
@@ -336,7 +379,7 @@ private:
         {
             VkDeviceQueueCreateInfo queue_create_info{
                 .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = indices.graphics_family.value(),
+                .queueFamilyIndex = family,
                 .queueCount = 1,
                 .pQueuePriorities = &priority};
 
@@ -471,14 +514,115 @@ private:
                 .viewType = VK_IMAGE_VIEW_TYPE_2D,
                 .format = swap_chain_image_format_,
                 .components = components,
-                .subresourceRange = subresource_range
-            };
+                .subresourceRange = subresource_range};
 
-            if (vkCreateImageView(device_, &create_info, nullptr, current_view++) != VK_SUCCESS)
+            if (vkCreateImageView(device_,
+                    &create_info,
+                    nullptr,
+                    current_view++) != VK_SUCCESS)
             {
                 throw std::runtime_error{"failed to create image views!"};
             }
         }
+    }
+
+    void create_graphics_pipeline()
+    {
+        auto const vert_shader{read_file("../shaders/vert.spv")};
+        auto const frag_shader{read_file("../shaders/frag.spv")};
+
+        VkShaderModule vert_shader_module{
+            create_shader_module(device_, vert_shader)};
+        VkShaderModule frag_shader_module{
+            create_shader_module(device_, frag_shader)};
+
+        VkPipelineShaderStageCreateInfo vert_shader_stage_info{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vert_shader_module,
+            .pName = "main"};
+
+        VkPipelineShaderStageCreateInfo frag_shader_stage_info{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = frag_shader_module,
+            .pName = "main"};
+
+        std::array shader_stages{vert_shader_stage_info,
+            frag_shader_stage_info};
+
+        VkPipelineVertexInputStateCreateInfo vertex_input_info{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount = 0,
+            .pVertexBindingDescriptions = nullptr,
+            .vertexAttributeDescriptionCount = 0,
+            .pVertexAttributeDescriptions = nullptr};
+
+        VkPipelineInputAssemblyStateCreateInfo input_assembly{
+            .sType =
+                VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .primitiveRestartEnable = VK_FALSE};
+
+        std::vector<VkDynamicState> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR};
+
+        VkPipelineDynamicStateCreateInfo dynamic_state{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
+            .pDynamicStates = dynamic_states.data()};
+
+        VkPipelineRasterizationStateCreateInfo rasterizer{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .depthClampEnable = VK_FALSE,
+            .rasterizerDiscardEnable = VK_FALSE,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_BACK_BIT,
+            .frontFace = VK_FRONT_FACE_CLOCKWISE,
+            .depthBiasEnable = VK_FALSE,
+            .depthBiasConstantFactor = 0.0f,
+            .depthBiasClamp = 0.0f,
+            .depthBiasSlopeFactor = 0.0f,
+            .lineWidth = 1.0f};
+
+        VkPipelineMultisampleStateCreateInfo multisampling{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            .sampleShadingEnable = VK_FALSE,
+            .minSampleShading = 1.0f,
+            .pSampleMask = nullptr,
+            .alphaToCoverageEnable = VK_FALSE,
+            .alphaToOneEnable = VK_FALSE};
+
+        VkPipelineColorBlendAttachmentState color_blend_attachment{
+            .blendEnable = VK_FALSE,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+                VK_COLOR_COMPONENT_A_BIT
+        };
+
+        VkPipelineColorBlendStateCreateInfo colorBlending{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .logicOpEnable = VK_FALSE,
+            .logicOp = VK_LOGIC_OP_COPY,
+            .attachmentCount = 1,
+            .pAttachments = &color_blend_attachment,
+            .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}};
+
+        VkPipelineLayoutCreateInfo pipeline_layout_info{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = 0,
+            .pSetLayouts = nullptr,
+            .pushConstantRangeCount = 0,
+            .pPushConstantRanges = nullptr};
+
+        if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to create pipeline layout"};
+        }
+
+        vkDestroyShaderModule(device_, frag_shader_module, nullptr);
+        vkDestroyShaderModule(device_, vert_shader_module, nullptr);
     }
 
     void mainLoop()
@@ -491,6 +635,7 @@ private:
 
     void cleanup()
     {
+        vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
         std::ranges::for_each(swap_chain_image_views_,
             [this](VkImageView view)
             { vkDestroyImageView(device_, view, nullptr); });
@@ -516,10 +661,14 @@ private:
     VkFormat swap_chain_image_format_;
     VkExtent2D swap_chain_extent_;
     std::vector<VkImageView> swap_chain_image_views_;
+    VkPipelineLayout pipeline_layout_;
 };
 
 int main()
 {
+    std::cout << "Working directory: " << std::filesystem::current_path()
+              << '\n';
+
     hello_triangle_application app;
 
     try
