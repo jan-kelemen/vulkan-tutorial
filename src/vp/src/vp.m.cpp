@@ -598,6 +598,11 @@ private:
             .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
             .primitiveRestartEnable = VK_FALSE};
 
+        VkPipelineViewportStateCreateInfo viewport_state{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .viewportCount = 1,
+            .scissorCount = 1};
+
         std::vector<VkDynamicState> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT,
             VK_DYNAMIC_STATE_SCISSOR};
 
@@ -635,7 +640,7 @@ private:
                 VK_COLOR_COMPONENT_A_BIT
         };
 
-        VkPipelineColorBlendStateCreateInfo colorBlending{
+        VkPipelineColorBlendStateCreateInfo color_blending{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
             .logicOpEnable = VK_FALSE,
             .logicOp = VK_LOGIC_OP_COPY,
@@ -655,6 +660,34 @@ private:
             throw std::runtime_error{"failed to create pipeline layout"};
         }
 
+        VkGraphicsPipelineCreateInfo pipeline_info{
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = 2,
+            .pStages = shader_stages.data(),
+            .pVertexInputState = &vertex_input_info,
+            .pInputAssemblyState = &input_assembly,
+            .pViewportState = &viewport_state,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pDepthStencilState = nullptr,
+            .pColorBlendState = &color_blending,
+            .pDynamicState = &dynamic_state,
+            .layout = pipeline_layout_,
+            .renderPass = render_pass_,
+            .subpass = 0,
+            .basePipelineHandle = VK_NULL_HANDLE,
+            .basePipelineIndex = -1};
+
+        if (vkCreateGraphicsPipelines(device_,
+                VK_NULL_HANDLE,
+                1,
+                &pipeline_info,
+                nullptr,
+                &graphics_pipeline_) != VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to create graphics pipeline!"};
+        }
+
         vkDestroyShaderModule(device_, frag_shader_module, nullptr);
         vkDestroyShaderModule(device_, vert_shader_module, nullptr);
     }
@@ -669,6 +702,7 @@ private:
 
     void cleanup()
     {
+        vkDestroyPipeline(device_, graphics_pipeline_, nullptr);
         vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
         vkDestroyRenderPass(device_, render_pass_, nullptr);
         std::ranges::for_each(swap_chain_image_views_,
@@ -698,6 +732,7 @@ private:
     std::vector<VkImageView> swap_chain_image_views_;
     VkRenderPass render_pass_;
     VkPipelineLayout pipeline_layout_;
+    VkPipeline graphics_pipeline_;
 };
 
 int main()
