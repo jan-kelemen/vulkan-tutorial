@@ -285,6 +285,8 @@ private:
         create_render_pass();
         create_graphics_pipeline();
         create_framebuffers();
+        create_command_pool();
+        create_command_buffer();
     }
 
     void create_instance()
@@ -555,7 +557,10 @@ private:
             .subpassCount = 1,
             .pSubpasses = &subpass};
 
-        if (vkCreateRenderPass(device_, &render_pass_info, nullptr, &render_pass_) != VK_SUCCESS)
+        if (vkCreateRenderPass(device_,
+                &render_pass_info,
+                nullptr,
+                &render_pass_) != VK_SUCCESS)
         {
             throw std::runtime_error{"failed to create render pass"};
         }
@@ -638,8 +643,7 @@ private:
             .blendEnable = VK_FALSE,
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
                 VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-                VK_COLOR_COMPONENT_A_BIT
-        };
+                VK_COLOR_COMPONENT_A_BIT};
 
         VkPipelineColorBlendStateCreateInfo color_blending{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -656,7 +660,10 @@ private:
             .pushConstantRangeCount = 0,
             .pPushConstantRanges = nullptr};
 
-        if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout_) != VK_SUCCESS)
+        if (vkCreatePipelineLayout(device_,
+                &pipeline_layout_info,
+                nullptr,
+                &pipeline_layout_) != VK_SUCCESS)
         {
             throw std::runtime_error{"failed to create pipeline layout"};
         }
@@ -696,7 +703,7 @@ private:
     void create_framebuffers()
     {
         swap_chain_framebuffers_.resize(swap_chain_image_views_.size());
-        
+
         for (size_t i{}; i != swap_chain_image_views_.size(); ++i)
         {
             std::array attachments{swap_chain_image_views_[i]};
@@ -720,6 +727,91 @@ private:
         }
     }
 
+    void create_command_pool()
+    {
+        queue_family_indices indices{
+            find_queue_families(physical_device_, surface_)};
+
+        VkCommandPoolCreateInfo pool_info{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex = *indices.graphics_family,
+        };
+
+        if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to create command pool"};
+        }
+    }
+
+    void create_command_buffer()
+    {
+        VkCommandBufferAllocateInfo alloc_info{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = command_pool_,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1};
+
+        if (vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer_) !=
+            VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to allocate command buffer!"};
+        }
+    }
+
+    void record_command_buffer(VkCommandBuffer command_buffer,
+        uint32_t image_index)
+    {
+        VkCommandBufferBeginInfo begin_info{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = 0,
+            .pInheritanceInfo = nullptr,
+        };
+
+        if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS)
+        {
+            throw std::runtime_error{
+                "failed to begin recording command buffer!"};
+        }
+
+        VkClearValue clearColor{{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        VkRenderPassBeginInfo render_pass_info{
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = render_pass_,
+            .framebuffer = swap_chain_framebuffers_[image_index],
+            .renderArea = {{0, 0}, swap_chain_extent_},
+            .clearValueCount = 1,
+            .pClearValues = &clearColor};
+
+        vkCmdBeginRenderPass(command_buffer,
+            &render_pass_info,
+            VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(command_buffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            graphics_pipeline_);
+
+        VkViewport viewport{.x = 0.0f,
+            .y = 0.0f,
+            .width = static_cast<float>(swap_chain_extent_.width),
+            .height = static_cast<float>(swap_chain_extent_.height),
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f};
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+        VkRect2D scissor{.offset = {0, 0}, .extent = swap_chain_extent_};
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+        vkCmdDraw(command_buffer, 3, 1, 0, 0);
+
+        vkCmdEndRenderPass(command_buffer);
+
+        if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to record command buffer!"};
+        }
+    }
+
     void mainLoop()
     {
         while (!glfwWindowShouldClose(window_.get()))
@@ -730,6 +822,7 @@ private:
 
     void cleanup()
     {
+        vkDestroyCommandPool(device_, command_pool_, nullptr);
         std::ranges::for_each(swap_chain_framebuffers_,
             [this](VkFramebuffer buffer)
             { vkDestroyFramebuffer(device_, buffer, nullptr); });
@@ -765,6 +858,8 @@ private:
     VkPipelineLayout pipeline_layout_;
     VkPipeline graphics_pipeline_;
     std::vector<VkFramebuffer> swap_chain_framebuffers_;
+    VkCommandPool command_pool_;
+    VkCommandBuffer command_buffer_;
 };
 
 int main()
