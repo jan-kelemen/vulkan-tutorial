@@ -17,9 +17,10 @@ Checks: '
   readability-*,
   -readability-magic-numbers
   -readability-redundant-access-specifiers
+  -readability-uppercase-literal-suffix
 '
 FormatStyle: 'file'
 
 CheckOptions:
   - key: readability-identifier-length.IgnoredVariableNames
-    value: 'rv|ec'
+    value: 'rv|ec|it'

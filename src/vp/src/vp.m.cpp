@@ -3,17 +3,22 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace
@@ -43,6 +48,22 @@ namespace
     std::array<char const*, 1> const device_extensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+    void enumerate_extensions()
+    {
+        uint32_t count; // NOLINT
+        vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> extensions{count};
+        vkEnumerateInstanceExtensionProperties(nullptr,
+            &count,
+            extensions.data());
+
+        std::cout << "Available extensions:\n";
+        for (auto const& extension : extensions)
+        {
+            std::cout << '\t' << extension.extensionName << '\n';
+        }
+    }
+
     struct [[nodiscard]] queue_family_indices
     {
         std::optional<uint32_t> graphics_family;
@@ -70,7 +91,7 @@ namespace
                 indices.graphics_family = i;
             }
 
-            VkBool32 present_support;
+            VkBool32 present_support; // NOLINT
             vkGetPhysicalDeviceSurfaceSupportKHR(device,
                 i,
                 surface,
@@ -107,7 +128,7 @@ namespace
             surface,
             &details.capabilities);
 
-        uint32_t format_count;
+        uint32_t format_count; // NOLINT
         vkGetPhysicalDeviceSurfaceFormatsKHR(device,
             surface,
             &format_count,
@@ -122,7 +143,7 @@ namespace
                 details.formats.data());
         }
 
-        uint32_t present_count;
+        uint32_t present_count; // NOLINT
         vkGetPhysicalDeviceSurfacePresentModesKHR(device,
             surface,
             &present_count,
@@ -176,8 +197,8 @@ namespace
             return capabilities.currentExtent;
         }
 
-        int width;
-        int height;
+        int width; // NOLINT
+        int height; // NOLINT
         glfwGetFramebufferSize(window, &width, &height);
 
         VkExtent2D actual_extent = {static_cast<uint32_t>(width),
@@ -195,7 +216,7 @@ namespace
 
     [[nodiscard]] bool extensions_supported(VkPhysicalDevice device)
     {
-        uint32_t count;
+        uint32_t count; // NOLINT
         vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
         std::vector<VkExtensionProperties> available_extensions{count};
         vkEnumerateDeviceExtensionProperties(device,
@@ -241,7 +262,7 @@ namespace
         create_info.codeSize = code.size();
         create_info.pCode = reinterpret_cast<uint32_t const*>(code.data());
 
-        VkShaderModule module;
+        VkShaderModule module; // NOLINT
         if (vkCreateShaderModule(device, &create_info, nullptr, &module) !=
             VK_SUCCESS)
         {
@@ -307,7 +328,7 @@ private:
 
         enumerate_extensions();
 
-        uint32_t glfw_extension_count;
+        uint32_t glfw_extension_count; // NOLINT
         char const** const glfw_extensions{
             glfwGetRequiredInstanceExtensions(&glfw_extension_count)};
         create_info.enabledExtensionCount = glfw_extension_count;
@@ -328,22 +349,6 @@ private:
                 &surface_) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create window surface!");
-        }
-    }
-
-    void enumerate_extensions()
-    {
-        uint32_t count;
-        vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
-        std::vector<VkExtensionProperties> extensions{count};
-        vkEnumerateInstanceExtensionProperties(nullptr,
-            &count,
-            extensions.data());
-
-        std::cout << "Available extensions:\n";
-        for (auto const& extension : extensions)
-        {
-            std::cout << '\t' << extension.extensionName << '\n';
         }
     }
 
@@ -821,14 +826,14 @@ private:
                 "failed to begin recording command buffer!"};
         }
 
-        VkClearValue clearColor{{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        VkClearValue const clear_color{{{0.0f, 0.0f, 0.0f, 1.0f}}};
         VkRenderPassBeginInfo render_pass_info{};
         render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         render_pass_info.renderPass = render_pass_;
         render_pass_info.framebuffer = swap_chain_framebuffers_[image_index];
         render_pass_info.renderArea = {{0, 0}, swap_chain_extent_};
         render_pass_info.clearValueCount = 1;
-        render_pass_info.pClearValues = &clearColor;
+        render_pass_info.pClearValues = &clear_color;
 
         vkCmdBeginRenderPass(command_buffer,
             &render_pass_info,
@@ -846,7 +851,9 @@ private:
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
-        VkRect2D scissor{.offset = {0, 0}, .extent = swap_chain_extent_};
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swap_chain_extent_;
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
         vkCmdDraw(command_buffer, 3, 1, 0, 0);
@@ -877,7 +884,7 @@ private:
         vkWaitForFences(device_, 1, &in_flight_fence_, VK_TRUE, timeout);
         vkResetFences(device_, 1, &in_flight_fence_);
 
-        uint32_t image_index;
+        uint32_t image_index; // NOLINT
         vkAcquireNextImageKHR(device_,
             swap_chain_,
             timeout,
@@ -984,7 +991,7 @@ int main()
     }
     catch (std::exception const& e)
     {
-        std::cerr << e.what() << std::endl;
+        std::cerr << e.what() << '\n';
         return EXIT_FAILURE;
     }
 
