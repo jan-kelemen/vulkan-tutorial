@@ -27,11 +27,12 @@ namespace
             throw std::runtime_error{"failed to open file!"};
         }
 
-        auto const file_size{static_cast<size_t>(stream.tellg())};
+        auto const eof{stream.tellg()};
 
-        std::vector<char> buffer(file_size);
+        std::vector<char> buffer(static_cast<size_t>(eof));
         stream.seekg(0);
-        stream.read(buffer.data(), file_size);
+
+        stream.read(buffer.data(), eof);
 
         return buffer;
     }
@@ -578,8 +579,8 @@ private:
 
     void create_graphics_pipeline()
     {
-        auto const vert_shader{read_file("../shaders/vert.spv")};
-        auto const frag_shader{read_file("../shaders/frag.spv")};
+        auto const vert_shader{read_file("vert.spv")};
+        auto const frag_shader{read_file("frag.spv")};
 
         VkShaderModule vert_shader_module{
             create_shader_module(device_, vert_shader)};
@@ -789,7 +790,8 @@ private:
                 &render_finished_semaphore_),
             vkCreateFence(device_, &fence_info, nullptr, &in_flight_fence_)};
 
-        if (std::ranges::count(result, VK_SUCCESS) != result.size())
+        if (static_cast<size_t>(std::ranges::count(result, VK_SUCCESS)) !=
+            result.size())
         {
             throw std::runtime_error{"failed to create sync objects"};
         }
@@ -905,8 +907,7 @@ private:
             .swapchainCount = static_cast<uint32_t>(swap_chains.size()),
             .pSwapchains = swap_chains.data(),
             .pImageIndices = &image_index,
-            .pResults = nullptr
-        };
+            .pResults = nullptr};
         vkQueuePresentKHR(present_queue_, &present_info);
     }
 
