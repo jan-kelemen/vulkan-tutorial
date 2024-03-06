@@ -24,12 +24,16 @@ add_custom_command(
     OUTPUT ${SHADER_BINARY_DIR}/vert.spv
     COMMAND 
         ${GLSLC_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert -o ${SHADER_BINARY_DIR}/vert.spv
+    DEPENDS 
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert
 )
 
 add_custom_command(
     OUTPUT ${SHADER_BINARY_DIR}/frag.spv
     COMMAND 
         ${GLSLC_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag -o ${SHADER_BINARY_DIR}/frag.spv
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag
 )
 
 set_property(TARGET vp 
