@@ -502,10 +502,13 @@ namespace
         }
     };
 
-    std::vector<Vertex> const vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+    std::vector<Vertex> const vertices{
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
 
+    std::vector<uint16_t> const indices{0, 1, 2, 2, 3, 0};
 } // namespace
 
 class hello_triangle_application
@@ -549,6 +552,7 @@ private:
         create_framebuffers();
         create_command_pool();
         create_vertex_buffer();
+        create_index_buffer();
         create_command_buffer();
         create_sync_objects();
     }
@@ -667,12 +671,12 @@ private:
 
     void create_logical_device()
     {
-        queue_family_indices indices =
+        queue_family_indices queue_indices =
             find_queue_families(physical_device_, surface_);
 
         std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-        std::set<uint32_t> unique_families = {indices.graphics_family.value(),
-            indices.present_family.value()};
+        std::set<uint32_t> unique_families = {queue_indices.graphics_family.value(),
+            queue_indices.present_family.value()};
         float const priority{1.0f};
         for (uint32_t family : unique_families)
         {
@@ -706,12 +710,12 @@ private:
         }
 
         vkGetDeviceQueue(device_,
-            indices.graphics_family.value(),
+            queue_indices.graphics_family.value(),
             0,
             &graphics_queue_);
 
         vkGetDeviceQueue(device_,
-            indices.present_family.value(),
+            queue_indices.present_family.value(),
             0,
             &present_queue_);
     }
@@ -749,12 +753,12 @@ private:
         create_info.clipped = VK_TRUE;
         create_info.oldSwapchain = VK_NULL_HANDLE;
 
-        queue_family_indices const indices{
+        queue_family_indices const queue_indices{
             find_queue_families(physical_device_, surface_)};
-        std::array queue_family_indices{indices.present_family.value(),
-            indices.present_family.value()};
+        std::array queue_family_indices{queue_indices.present_family.value(),
+            queue_indices.present_family.value()};
 
-        if (indices.graphics_family != indices.present_family)
+        if (queue_indices.graphics_family != queue_indices.present_family)
         {
             create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
             create_info.queueFamilyIndexCount = 2;
@@ -1048,13 +1052,13 @@ private:
 
     void create_command_pool()
     {
-        queue_family_indices indices{
+        queue_family_indices queue_indices{
             find_queue_families(physical_device_, surface_)};
 
         VkCommandPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        pool_info.queueFamilyIndex = *indices.graphics_family;
+        pool_info.queueFamilyIndex = *queue_indices.graphics_family;
 
         if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) !=
             VK_SUCCESS)
@@ -1101,6 +1105,46 @@ private:
             graphics_queue_,
             staging_buffer,
             vertex_buffer_,
+            buffer_size);
+
+        vkDestroyBuffer(device_, staging_buffer, nullptr);
+        vkFreeMemory(device_, staging_buffer_memory, nullptr);
+    }
+
+    void create_index_buffer()
+    {
+        VkDeviceSize buffer_size{sizeof(indices[0]) * indices.size()};
+
+        VkBuffer staging_buffer;
+        VkDeviceMemory staging_buffer_memory;
+        create_buffer(physical_device_,
+            device_,
+            buffer_size,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            staging_buffer,
+            staging_buffer_memory);
+
+        void* data;
+        vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
+        memcpy(data, indices.data(), static_cast<size_t>(buffer_size));
+        vkUnmapMemory(device_, staging_buffer_memory);
+
+        create_buffer(physical_device_,
+            device_,
+            buffer_size,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            index_buffer_,
+            index_buffer_memory_);
+
+        copy_buffer(device_,
+            command_pool_,
+            graphics_queue_,
+            staging_buffer,
+            index_buffer_,
             buffer_size);
 
         vkDestroyBuffer(device_, staging_buffer, nullptr);
@@ -1195,9 +1239,16 @@ private:
         VkBuffer vertex_buffers[] = {vertex_buffer_};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-        vkCmdDraw(command_buffer,
-            static_cast<uint32_t>(vertices.size()),
+
+        vkCmdBindIndexBuffer(command_buffer,
+            index_buffer_,
+            0,
+            VK_INDEX_TYPE_UINT16);
+
+        vkCmdDrawIndexed(command_buffer,
+            static_cast<uint32_t>(indices.size()),
             1,
+            0,
             0,
             0);
 
@@ -1278,6 +1329,8 @@ private:
         vkDestroySemaphore(device_, image_available_semaphore_, nullptr);
         vkDestroySemaphore(device_, render_finished_semaphore_, nullptr);
         vkDestroyFence(device_, in_flight_fence_, nullptr);
+        vkDestroyBuffer(device_, index_buffer_, nullptr);
+        vkFreeMemory(device_, index_buffer_memory_, nullptr);
         vkDestroyBuffer(device_, vertex_buffer_, nullptr);
         vkFreeMemory(device_, vertex_buffer_memory_, nullptr);
         vkDestroyCommandPool(device_, command_pool_, nullptr);
@@ -1326,6 +1379,8 @@ private:
     VkCommandPool command_pool_;
     VkBuffer vertex_buffer_;
     VkDeviceMemory vertex_buffer_memory_;
+    VkBuffer index_buffer_;
+    VkDeviceMemory index_buffer_memory_;
     VkCommandBuffer command_buffer_;
     VkSemaphore image_available_semaphore_;
     VkSemaphore render_finished_semaphore_;
