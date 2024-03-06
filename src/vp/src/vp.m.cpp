@@ -383,8 +383,7 @@ namespace
         throw std::runtime_error{"failed to find suitable memory type!"};
     }
 
-    void create_buffer(
-        VkPhysicalDevice physical_device,
+    void create_buffer(VkPhysicalDevice physical_device,
         VkDevice device,
         VkDeviceSize size,
         VkBufferUsageFlags usage,
@@ -398,7 +397,8 @@ namespace
         buffer_info.usage = usage;
         buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(device, &buffer_info, nullptr, &buffer) != VK_SUCCESS)
+        if (vkCreateBuffer(device, &buffer_info, nullptr, &buffer) !=
+            VK_SUCCESS)
         {
             throw std::runtime_error{"failed to create buffer!"};
         }
@@ -413,7 +413,8 @@ namespace
             memory_requirements.memoryTypeBits,
             properties);
 
-        if (vkAllocateMemory(device, &alloc_info, nullptr, &buffer_memory) != VK_SUCCESS)
+        if (vkAllocateMemory(device, &alloc_info, nullptr, &buffer_memory) !=
+            VK_SUCCESS)
         {
             throw std::runtime_error{"failed to allocate buffer memory!"};
         }
@@ -421,11 +422,12 @@ namespace
         vkBindBufferMemory(device, buffer, buffer_memory, 0);
     }
 
-    void copy_buffer(
-        VkDevice device,
+    void copy_buffer(VkDevice device,
         VkCommandPool command_pool,
         VkQueue graphics_queue,
-        VkBuffer source, VkBuffer target, VkDeviceSize size)
+        VkBuffer source,
+        VkBuffer target,
+        VkDeviceSize size)
     {
         VkCommandBufferAllocateInfo alloc_info{};
         alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -487,8 +489,7 @@ namespace
         static constexpr std::array<VkVertexInputAttributeDescription, 2>
         attribute_description()
         {
-            std::array<VkVertexInputAttributeDescription, 2>
-                desc{};
+            std::array<VkVertexInputAttributeDescription, 2> desc{};
 
             desc[0].binding = 0;
             desc[0].location = 0;
@@ -504,8 +505,7 @@ namespace
         }
     };
 
-    std::vector<Vertex> const vertices{
-        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    std::vector<Vertex> const vertices{{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
         {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
         {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
         {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
@@ -531,9 +531,18 @@ private:
         constexpr int height = 600;
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window_.reset(
             glfwCreateWindow(width, height, "Vulkan", nullptr, nullptr));
+        glfwSetWindowUserPointer(window_.get(), this);
+        glfwSetFramebufferSizeCallback(window_.get(),
+            framebuffer_resize_callback);
+    }
+
+    static void framebuffer_resize_callback(GLFWwindow* window, int width, int height)
+    {
+        auto app{reinterpret_cast<hello_triangle_application*>(
+            glfwGetWindowUserPointer(window))};
+        app->framebuffer_resized = true;
     }
 
     void init_vulkan()
@@ -677,7 +686,8 @@ private:
             find_queue_families(physical_device_, surface_);
 
         std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-        std::set<uint32_t> unique_families = {queue_indices.graphics_family.value(),
+        std::set<uint32_t> unique_families = {
+            queue_indices.graphics_family.value(),
             queue_indices.present_family.value()};
         float const priority{1.0f};
         for (uint32_t family : unique_families)
@@ -789,6 +799,26 @@ private:
             swap_chain_images_.data());
         swap_chain_image_format_ = surface_format.format;
         swap_chain_extent_ = extent;
+    }
+
+    void recreate_swap_chain()
+    {
+        int width{};
+        int height{};
+        glfwGetFramebufferSize(window_.get(), &width, &height);
+        while (width == 0 || height == 0)
+        {
+            glfwGetFramebufferSize(window_.get(), &width, &height);
+            glfwWaitEvents();
+        }
+
+        vkDeviceWaitIdle(device_);
+
+        cleanup_swap_chain();
+
+        create_swap_chain();
+        create_image_views();
+        create_framebuffers();
     }
 
     void create_image_views()
@@ -1085,11 +1115,7 @@ private:
             staging_buffer_memory);
 
         void* data;
-        vkMapMemory(device_, staging_buffer_memory,
-            0,
-            buffer_size,
-            0,
-            &data);
+        vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
         memcpy(data, vertices.data(), static_cast<size_t>(buffer_size));
         vkUnmapMemory(device_, staging_buffer_memory);
 
@@ -1136,8 +1162,7 @@ private:
         create_buffer(physical_device_,
             device_,
             buffer_size,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             index_buffer_,
             index_buffer_memory_);
@@ -1161,10 +1186,12 @@ private:
         alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         alloc_info.commandPool = command_pool_;
         alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        alloc_info.commandBufferCount = static_cast<uint32_t>(command_buffers_.size());
+        alloc_info.commandBufferCount =
+            static_cast<uint32_t>(command_buffers_.size());
 
-        if (vkAllocateCommandBuffers(device_, &alloc_info, command_buffers_.data()) !=
-            VK_SUCCESS)
+        if (vkAllocateCommandBuffers(device_,
+                &alloc_info,
+                command_buffers_.data()) != VK_SUCCESS)
         {
             throw std::runtime_error{"failed to allocate command buffer!"};
         }
@@ -1289,16 +1316,31 @@ private:
     {
         constexpr auto timeout{std::numeric_limits<uint64_t>::max()};
 
-        vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE, timeout);
-        vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
+        vkWaitForFences(device_,
+            1,
+            &in_flight_fences_[current_frame_],
+            VK_TRUE,
+            timeout);
 
         uint32_t image_index; // NOLINT
-        vkAcquireNextImageKHR(device_,
+        VkResult result{vkAcquireNextImageKHR(device_,
             swap_chain_,
             timeout,
             image_available_semaphores_[current_frame_],
             VK_NULL_HANDLE,
-            &image_index);
+            &image_index)};
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            recreate_swap_chain();
+            return;
+        }
+        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        {
+            throw std::runtime_error{"failed to acquire swap chain image"};
+        }
+
+        vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
 
         vkResetCommandBuffer(command_buffers_[current_frame_], 0);
         record_command_buffer(command_buffers_[current_frame_], image_index);
@@ -1319,12 +1361,10 @@ private:
         submit_info.signalSemaphoreCount =
             static_cast<uint32_t>(signal_semaphores.size());
         submit_info.pSignalSemaphores = signal_semaphores.data();
-
         if (vkQueueSubmit(graphics_queue_,
                 1,
                 &submit_info,
-                in_flight_fences_[current_frame_]) !=
-            VK_SUCCESS)
+                in_flight_fences_[current_frame_]) != VK_SUCCESS)
         {
             throw std::runtime_error{"failed to submit draw command buffer"};
         }
@@ -1339,35 +1379,47 @@ private:
         present_info.pSwapchains = swap_chains.data();
         present_info.pImageIndices = &image_index;
         present_info.pResults = nullptr;
-        vkQueuePresentKHR(present_queue_, &present_info);
+        result = vkQueuePresentKHR(present_queue_, &present_info);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebuffer_resized)
+        {
+            framebuffer_resized = false;
+            recreate_swap_chain();
+        }
+        else if (result != VK_SUCCESS)
+        {
+            throw std::runtime_error{"failed to present swap chain image!"};
+        }
 
         current_frame_ = (current_frame_ + 1) % max_frames_in_flight;
     }
 
     void cleanup()
     {
-        for (size_t i{}; i != max_frames_in_flight; ++i)
-        {
-            vkDestroySemaphore(device_, image_available_semaphores_[i], nullptr);
-            vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
-            vkDestroyFence(device_, in_flight_fences_[i], nullptr);
-        }
+        cleanup_swap_chain();
 
         vkDestroyBuffer(device_, index_buffer_, nullptr);
         vkFreeMemory(device_, index_buffer_memory_, nullptr);
+
         vkDestroyBuffer(device_, vertex_buffer_, nullptr);
         vkFreeMemory(device_, vertex_buffer_memory_, nullptr);
-        vkDestroyCommandPool(device_, command_pool_, nullptr);
-        std::ranges::for_each(swap_chain_framebuffers_,
-            [this](VkFramebuffer buffer)
-            { vkDestroyFramebuffer(device_, buffer, nullptr); });
+
         vkDestroyPipeline(device_, graphics_pipeline_, nullptr);
         vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+
         vkDestroyRenderPass(device_, render_pass_, nullptr);
-        std::ranges::for_each(swap_chain_image_views_,
-            [this](VkImageView view)
-            { vkDestroyImageView(device_, view, nullptr); });
-        vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+
+        for (size_t i{}; i != max_frames_in_flight; ++i)
+        {
+            vkDestroySemaphore(device_,
+                image_available_semaphores_[i],
+                nullptr);
+            vkDestroySemaphore(device_,
+                render_finished_semaphores_[i],
+                nullptr);
+            vkDestroyFence(device_, in_flight_fences_[i], nullptr);
+        }
+
+        vkDestroyCommandPool(device_, command_pool_, nullptr);
         vkDestroyDevice(device_, nullptr);
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
         if (debug_messenger_)
@@ -1379,6 +1431,21 @@ private:
         vkDestroyInstance(instance_, nullptr);
         window_.reset();
         glfwTerminate();
+    }
+
+    void cleanup_swap_chain()
+    {
+        for (size_t i{}; i != swap_chain_framebuffers_.size(); ++i)
+        {
+            vkDestroyFramebuffer(device_, swap_chain_framebuffers_[i], nullptr);
+        }
+
+        for (size_t i{}; i != swap_chain_image_views_.size(); ++i)
+        {
+            vkDestroyImageView(device_, swap_chain_image_views_[i], nullptr);
+        }
+
+        vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
     }
 
 private:
@@ -1411,6 +1478,7 @@ private:
     std::vector<VkFence> in_flight_fences_;
 
     uint32_t current_frame_{};
+    bool framebuffer_resized{};
 };
 
 int main()
