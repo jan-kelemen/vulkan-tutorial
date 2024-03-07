@@ -15,6 +15,7 @@ class VPConan(ConanFile):
         self.requires("vulkan-loader/1.3.268.0")
         self.requires("glfw/3.4")
         self.requires("glm/cci.20230113")
+        self.requires("stb/cci.20230920")
 
     def build_requirements(self):
         self.tool_requires("cmake/[^3.27]")

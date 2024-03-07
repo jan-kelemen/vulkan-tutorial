@@ -3,6 +3,9 @@ add_executable(vp)
 set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
 
+set(TEXTURE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/textures)
+file(MAKE_DIRECTORY ${TEXTURE_BINARY_DIR})
+
 target_sources(vp
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/vp.m.cpp
@@ -17,6 +20,7 @@ target_link_libraries(vp
         glm::glm
         vulkan-headers::vulkan-headers
         Vulkan::Loader
+        stb::stb
         project-options
 )
 
