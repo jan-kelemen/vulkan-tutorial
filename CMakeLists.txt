@@ -18,12 +18,6 @@ find_package(VulkanHeaders REQUIRED)
 find_package(VulkanLoader REQUIRED)
 
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-    include(CTest)
-    if (BUILD_TESTING)
-        find_package(Catch2)
-        set(VP_BUILD_TESTS ON)
-    endif()
-
     include(${PROJECT_SOURCE_DIR}/cmake/clang-tidy.cmake)
     include(${PROJECT_SOURCE_DIR}/cmake/cppcheck.cmake)
     include(${PROJECT_SOURCE_DIR}/cmake/iwyu.cmake)

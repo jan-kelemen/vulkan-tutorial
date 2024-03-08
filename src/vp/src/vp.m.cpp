@@ -1,5 +1,7 @@
-#define GLFW_INCLUDE_VULKAN
+// clang-format off
+#include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+// clang-format on
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
@@ -18,6 +20,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -33,9 +37,11 @@
 #include <set>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace
@@ -160,7 +166,7 @@ namespace
         }
     }
 
-    void populate_debug_messanger_create_info(
+    void populate_debug_messenger_create_info(
         VkDebugUtilsMessengerCreateInfoEXT& info)
     {
         info = {};
@@ -291,10 +297,10 @@ namespace
     VkPresentModeKHR choose_swap_present_mode(
         std::span<VkPresentModeKHR const> available_present_modes)
     {
-        constexpr auto preffered_mode{VK_PRESENT_MODE_MAILBOX_KHR};
-        return std::ranges::find(available_present_modes, preffered_mode) !=
+        constexpr auto preferred_mode{VK_PRESENT_MODE_MAILBOX_KHR};
+        return std::ranges::find(available_present_modes, preferred_mode) !=
                 available_present_modes.cend()
-            ? preffered_mode
+            ? preferred_mode
             : VK_PRESENT_MODE_FIFO_KHR;
     }
 
@@ -1094,7 +1100,7 @@ private:
                     VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
                 VkDebugUtilsMessengerCreateInfoEXT debug_create_info;
-                populate_debug_messanger_create_info(debug_create_info);
+                populate_debug_messenger_create_info(debug_create_info);
                 create_info.pNext = &debug_create_info;
             }
             else
@@ -1121,7 +1127,7 @@ private:
     void setup_debug_messenger()
     {
         VkDebugUtilsMessengerCreateInfoEXT create_info;
-        populate_debug_messanger_create_info(create_info);
+        populate_debug_messenger_create_info(create_info);
 
         VkDebugUtilsMessengerEXT messenger_; // NOLINT
         if (create_debug_utils_messenger_ext(instance_,
@@ -1757,8 +1763,8 @@ private:
 
         create_image(physical_device_,
             device_,
-            width,
-            height,
+            static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height),
             mip_levels_,
             VK_SAMPLE_COUNT_1_BIT,
             VK_FORMAT_R8G8B8A8_SRGB,
@@ -1865,13 +1871,16 @@ private:
             {
                 vertex vert;
 
-                vert.pos = {attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]};
+                auto const vertex_index{
+                    3 * static_cast<size_t>(index.vertex_index)};
+                vert.pos = {attrib.vertices[vertex_index],
+                    attrib.vertices[vertex_index + 1],
+                    attrib.vertices[vertex_index + 2]};
 
-                vert.tex_coord = {
-                    attrib.texcoords[2 * index.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
+                auto const texcoor_index{
+                    2 * static_cast<size_t>(index.texcoord_index)};
+                vert.tex_coord = {attrib.texcoords[texcoor_index],
+                    1.0f - attrib.texcoords[texcoor_index + 1]};
 
                 vert.color = {1.0f, 1.0f, 1.0f};
 
@@ -2157,7 +2166,7 @@ private:
 
         std::array<VkClearValue, 2> clear_values{};
         clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clear_values[1].color = {1.0f, 0};
+        clear_values[1].color = {{1.0f, 0}};
 
         VkRenderPassBeginInfo render_pass_info{};
         render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -2336,7 +2345,7 @@ private:
             glm::vec3{0.0f, 0.0f, 1.0f});
 
         ubo.proj = glm::perspective(glm::radians(45.0f),
-            swap_chain_extent_.width /
+            static_cast<float>(swap_chain_extent_.width) /
                 static_cast<float>(swap_chain_extent_.height),
             0.1f,
             10.0f);
