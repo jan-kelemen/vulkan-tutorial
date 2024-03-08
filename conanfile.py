@@ -16,10 +16,10 @@ class VPConan(ConanFile):
         self.requires("glfw/3.4")
         self.requires("glm/cci.20230113")
         self.requires("stb/cci.20230920")
+        self.requires("tinyobjloader/1.0.7")
 
     def build_requirements(self):
         self.tool_requires("cmake/[^3.27]")
-        self.test_requires("catch2/[^3.5.2]")
 
     def layout(self):
         cmake_layout(self)

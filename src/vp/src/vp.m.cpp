@@ -6,9 +6,14 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 #include <algorithm>
 #include <array>
@@ -30,10 +35,16 @@
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 namespace
 {
+    constexpr std::string_view vertex_shader{"vert.spv"};
+    constexpr std::string_view fragment_shader{"frag.spv"};
+    constexpr std::string_view model_path{"viking_room.obj"};
+    constexpr std::string_view texture_path{"viking_room.png"};
+
     [[nodiscard]] std::vector<char> read_file(std::filesystem::path const& file)
     {
         std::ifstream stream{file, std::ios::ate | std::ios::binary};
@@ -520,7 +531,8 @@ namespace
         image_info.format = format;
         image_info.tiling = tiling;
         image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        image_info.usage = usage;;
+        image_info.usage = usage;
+        ;
         image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         image_info.samples = VK_SAMPLE_COUNT_1_BIT;
         image_info.flags = 0;
@@ -787,20 +799,9 @@ namespace
 
             return desc;
         }
+
+        friend bool operator==(vertex const&, vertex const&) = default;
     };
-
-    std::vector<vertex> const vertices{
-        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
-
-    std::vector<uint16_t> const indices{0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
 
     struct uniform_buffer_object
     {
@@ -809,6 +810,18 @@ namespace
         glm::mat4 proj;
     };
 } // namespace
+
+template<>
+struct std::hash<vertex>
+{
+    size_t operator()(vertex const& vert) const
+    {
+        return ((hash<glm::vec3>()(vert.pos) ^
+                    (hash<glm::vec3>()(vert.color) << 1)) >>
+                   1) ^
+            (hash<glm::vec2>()(vert.tex_coord) << 1);
+    }
+};
 
 class hello_triangle_application
 {
@@ -866,6 +879,7 @@ private:
         create_texture_image();
         create_texture_image_view();
         create_texture_sampler();
+        load_model();
         create_vertex_buffer();
         create_index_buffer();
         create_uniform_buffers();
@@ -1183,10 +1197,15 @@ private:
         VkSubpassDependency dependency{};
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.srcStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.srcAccessMask = 0;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
         std::array attachments{color_attachment, depth_attachment};
         VkRenderPassCreateInfo render_pass_info{};
@@ -1242,8 +1261,8 @@ private:
 
     void create_graphics_pipeline()
     {
-        auto const vert_shader{read_file("../shaders/vert.spv")};
-        auto const frag_shader{read_file("../shaders/frag.spv")};
+        auto const vert_shader{read_file(vertex_shader)};
+        auto const frag_shader{read_file(fragment_shader)};
 
         VkShaderModule vert_shader_module{
             create_shader_module(device_, vert_shader)};
@@ -1407,7 +1426,8 @@ private:
 
         for (size_t i{}; i != swap_chain_image_views_.size(); ++i)
         {
-            std::array attachments{swap_chain_image_views_[i], depth_image_view_};
+            std::array attachments{swap_chain_image_views_[i],
+                depth_image_view_};
 
             VkFramebufferCreateInfo frame_buffer_info{};
             frame_buffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1466,8 +1486,9 @@ private:
             depth_format,
             VK_IMAGE_ASPECT_DEPTH_BIT);
 
-        transition_image_layout(
-            device_, graphics_queue_, command_pool_,
+        transition_image_layout(device_,
+            graphics_queue_,
+            command_pool_,
             depth_image_,
             depth_format,
             VK_IMAGE_LAYOUT_UNDEFINED,
@@ -1479,7 +1500,7 @@ private:
         int width;
         int height;
         int channels;
-        stbi_uc* pixels{stbi_load("texture.jpg",
+        stbi_uc* pixels{stbi_load(texture_path.data(),
             &width,
             &height,
             &channels,
@@ -1583,6 +1604,54 @@ private:
                 &texture_sampler_) != VK_SUCCESS)
         {
             throw std::runtime_error{"failed to create_texture sampler!"};
+        }
+    }
+
+    void load_model()
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warning;
+        std::string error;
+
+        if (!tinyobj::LoadObj(&attrib,
+                &shapes,
+                &materials,
+                &warning,
+                &error,
+                model_path.data()))
+        {
+            throw std::runtime_error{warning + error};
+        }
+
+        std::unordered_map<vertex, uint32_t> unique_vertices;
+
+        for (auto const& shape : shapes)
+        {
+            for (auto const& index : shape.mesh.indices)
+            {
+                vertex vert;
+
+                vert.pos = {attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]};
+
+                vert.tex_coord = {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
+
+                vert.color = {1.0f, 1.0f, 1.0f};
+
+                auto const& [it, inserted] = unique_vertices.try_emplace(vert,
+                    static_cast<uint32_t>(vertices.size()));
+                if (inserted)
+                {
+                    vertices.push_back(vert);
+                }
+
+                indices.push_back(it->second);
+            }
         }
     }
 
@@ -1855,7 +1924,7 @@ private:
         }
 
         std::array<VkClearValue, 2> clear_values{};
-        clear_values[0].color ={{0.0f, 0.0f, 0.0f, 1.0f}};
+        clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
         clear_values[1].color = {1.0f, 0};
 
         VkRenderPassBeginInfo render_pass_info{};
@@ -1863,7 +1932,8 @@ private:
         render_pass_info.renderPass = render_pass_;
         render_pass_info.framebuffer = swap_chain_framebuffers_[image_index];
         render_pass_info.renderArea = {{0, 0}, swap_chain_extent_};
-        render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+        render_pass_info.clearValueCount =
+            static_cast<uint32_t>(clear_values.size());
         render_pass_info.pClearValues = clear_values.data();
 
         vkCmdBeginRenderPass(command_buffer,
@@ -1894,7 +1964,7 @@ private:
         vkCmdBindIndexBuffer(command_buffer,
             index_buffer_,
             0,
-            VK_INDEX_TYPE_UINT16);
+            VK_INDEX_TYPE_UINT32);
 
         vkCmdBindDescriptorSets(command_buffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -2146,6 +2216,8 @@ private:
     VkDeviceMemory depth_image_memory_;
     VkImageView depth_image_view_;
     VkSampler texture_sampler_;
+    std::vector<vertex> vertices;
+    std::vector<uint32_t> indices;
     VkBuffer vertex_buffer_;
     VkDeviceMemory vertex_buffer_memory_;
     VkBuffer index_buffer_;
